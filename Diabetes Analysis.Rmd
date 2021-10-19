@@ -1,0 +1,164 @@
+---
+output:
+  pdf_document: default
+header-includes:
+  - \usepackage{color}
+---
+----
+ Summer 2021
+---
+
+```{r, echo = F, results = 'hide', message=F, warning = F}
+library(knitr)  
+```
+
+# \textcolor{blue}{Modeling  Lab 4: Logistic Regression}
+#### Author:_____Eric Wnorowski_____
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(broom) 
+library(modelr)
+```
+
+
+## \textcolor{blue}{Problem: Predicting Diabetes Diagnosis}
+
+Diabetes became one of the fastest growing chronic diseases in the modern word. According to the World Health Organization, it is the seventh leading cause of death and more than 500 million people in the world are diagnosed with the disease. Early diagnosis is crucial for the treatment of diabetes, so it is essential to identify the factors associated with the disease. In this lab we will explore the data set which contains the data on 768 patients, some of which was diagnosed with diabetes. 
+
+### \textcolor{blue}{Load Diabetes Dataset:}
+
+```{r}
+diabetes <- read.csv("diabetes.csv", header = TRUE)
+head(diabetes)
+```
+
+This dataset is originally from the National Institute of Diabetes and Digestive and Kidney Diseases. The objective is to predict based on diagnostic measurements whether a patient has diabetes.
+
+Several constraints were placed on the selection of these instances from a larger database. In particular, all patients here are females at least 21 years old of Pima Indian heritage. Below are descriptions of the variables
+
+* __Pregnancies__: Number of times pregnant
+* __Glucose__: Plasma glucose concentration a 2 hours in an oral glucose tolerance test
+* __BloodPressure__: Diastolic blood pressure (mm Hg)
+* __SkinThickness__: Triceps skin fold thickness (mm)
+* __Insulin__: 2-Hour serum insulin (mu U/ml)
+* __BMI__: Body mass index (weight in kg/(height in m)^2)
+* __DiabetesPedigreeFunction__: Diabetes pedigree function
+* __Age__: Age (years)
+* __Outcome__: Class variable (0 or 1), where **1** indicate that the patient was diagnosed with diabetes, while **0** indicate no diabetes
+
+### (A) Visual inspection of Glucose Oral test for Diabetic and Non-diabetic patients
+Oral glucose test is commonly used to diagnose diabetes. Let's explore the Glucose variable to access if it is a reliable predictor of the diabetes. 
+
+One of the problem with Glucose measurements in the dataset, is that when the blood sample for Glucose was not available, the trial coordinator recorded a value **0** in the glucose column. Since a value of zero does not represent the actual measure of glucose, we need to remove the patients with zero glucose from our dataset.  
+
+```{r}
+Zdiabetes <- diabetes %>%
+  filter(diabetes$Glucose != 0)
+
+ggplot(data = Zdiabetes, aes(x = Glucose, y = Outcome)) + geom_point()
+```
+
+This graph shows that as Glucose increases the likely hood of having diabetes increases. Those diagnosed were mainly between 100 and 200 where as those not diagnosed were mostly between 75-150.
+
+Before we conduct any statistical analysis of the relationship between the glucose level and diabetes, we should evaluate the distribution of the glucose level in our data set. 
+```{r}
+ggplot(data = diabetes, aes(x = Glucose)) + geom_histogram(binwidth = 10)
+``` 
+
+Most of those measured were between 80 and 180. The group with the largest number of patients was 110-120. 
+
+
+```{r}
+diabetes <- diabetes  %>%
+   mutate(glucose_groups = cut(x = Glucose, breaks = c(0, 125, 150, 175, 200)))
+```
+
+```{r}
+table(diabetes$glucose_groups)
+```
+
+The most common range is actually in Glucose levels less than 125, and decreases from there. The high level group only has 55 participants. 
+
+```{r}
+by_glucose <- diabetes %>% 
+  group_by(glucose_groups)
+
+by_glucose <- by_glucose %>% 
+  summarise(p = sum(Outcome)/length(Outcome))
+
+head(by_glucose)
+```
+
+The probability of having diabetes increases for each level. The highest group has an 83% possibility ofbeing diagnosed while the 125-150 Glucose group is almost half that at 45%
+
+```{r}
+by_glucose <- by_glucose %>% 
+  mutate(odds  = p/(1-p)) 
+head(by_glucose)
+```
+
+The odds are predictably similar to the probabilities. In this case it demonstrates that those in the highest group are five times more likely to be diagnosed. While those with levels under 150 percent are not expected to be diagnosed.
+
+```{r}
+by_glucose <- by_glucose %>% 
+  mutate(logit = log(odds))
+head(by_glucose)
+
+lm <- ggplot(data = by_glucose, aes(x = glucose_groups, y = logit)) + geom_point()
+lm
+```
+
+The log odds and glucose level has an a linear relationship! As expected, on this case a positive linear relationship that shows as glucose increases log(odds) also increase. All of these models have demonstrated a positive relationship between glucose level and diagnosis. 
+
+```{r}
+
+ggplot(data = diabetes, aes(x = Glucose, y = Outcome)) + geom_point() + geom_smooth(method = lm)
+```
+
+
+```{r}
+lm1 <- lm(Outcome ~ Glucose, data = diabetes)
+summary(lm1)
+```
+There is very little residual as seen in the summary, and the model confirms what was visualized in similar graphs. 
+
+```{r}
+test_set <- tribble(
+  ~Glucose,
+  165
+)
+  
+gridy <- test_set %>%
+  add_predictions(lm1, "Outcome_pred")
+head(gridy)
+```
+
+65% chance, Using the model and add_predictions() we find the predicted outcome to be .65 which is 65% of 1 (a positive diagnsis)
+
+The complex diseases, such as diabetes, rarely can be diagnosed by one test. More commonly, several tests should be combined to provide a reliable diagnosis. We can use multiple logistic regression to predict single categorical variable (Outcome) using two numerical predictor variables.
+
+
+Since it is expensive to run complex blood test, which require well-trained medical personnel, it would be beneficial to the patient if he and she could monitor the diagnostic criteria for diabetes at home. We already established that home glucose test can be used, but is there another reliable indicator we can use to improve the diagnostic criteria?  One common test is used for diabetes treatment is measurement of skin thickness of triceps fold. It is easy to conduct and it does not require extensive training to conduct. 
+
+```{r}
+STdiabetes <- diabetes %>%
+  filter(diabetes$SkinThickness != 0)
+
+lm2 <- lm(Outcome ~ Glucose + SkinThickness, data = STdiabetes)
+summary(lm2)
+```
+
+Compared to our previously model the residuals are lower, which is a sign the graph has improved. It also stays consistent with an increasing slope of 0.0760985.
+
+Since our data set was collected only among women, we can address the gender-specific questions. For example, it is useful to know if the number of pregnancies the women have affect her risk of having diabetes. Another risk factor for diabetes is the Body Mass Index (BMI). 
+
+```{r}
+BMIdiabetes <- diabetes %>%
+  filter(diabetes$BMI != 0)
+
+lm3 <- lm(Outcome ~ BMI + Pregnancies, data = STdiabetes)
+summary(lm3)
+```
+
+Both of these coefficients have positive correlations which means that an increase in BMI and increase in the number of pregnancies would both increase the likelihood of diagnosis. 
